@@ -1,0 +1,33 @@
+dataset:
+  file_name: 'training_data.csv'
+  file_type: 'csv'
+  target_column: 'text'
+  label_column: 'label'
+  type: 'text-classification'
+  test_size: 0.1
+  label_classes:
+    - 'not_relevant'
+    - 'relevant'
+
+train:
+  pretrained_checkpoint: 'distilbert-base-uncased'
+  compute_metrics:
+    - 'accuracy'
+    - 'f1'
+  quantize: true
+  save_as_onnx: true
+  save_info: true
+  padding: true
+  truncation: true
+  batch_size: 32
+  save_strategy: 'epoch'
+  evaluation_strategy: 'epoch'
+  save_total_limit: 3
+  push_to_hub: false
+  log_level: 'error'
+  num_train_epochs: 8
+  learning_rate: 2e-5
+  weight_decay: 0.01
+  delete_checkpoints_after_training: true
+  delete_unquantized_onnx_after_training: true
+
