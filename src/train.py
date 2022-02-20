@@ -1,5 +1,6 @@
 from tqdm import tqdm
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from functools import partial
 import shutil
@@ -53,25 +54,27 @@ class Metrics:
             acc = accuracy_score(labels, preds)
             metrics_data['accuracy'] = acc
 
+        logger.info(f"{metrics_data}")
         return metrics_data
 
 
 class OnnxPipeline:
-    def __init__(self, model, tokenizer, id2label):
+    def __init__(self, model, tokenizer, id2label, return_all=True):
         self.model = model
         self.tokenizer = tokenizer
         self.id2label = id2label
+        self.return_all = return_all
 
     def __call__(self, query):
         model_inputs = self.tokenizer(query, return_tensors="pt", padding=True, truncation=True)
         inputs_onnx = {k: v.cpu().detach().numpy() for k, v in model_inputs.items()}
         logits = self.model.run(None, inputs_onnx)[0][0, :]
         probs = softmax(logits)
-        pred_idx = np.argmax(probs).item()
-
-        # return [{"label": self.classes.int2str(pred_idx), "score": probs[pred_idx]}]
-        return [{"label": self.id2label[pred_idx], "score": probs[pred_idx]}]
-
+        if self.return_all == False:
+            pred_idx = np.argmax(probs).item()
+            return [{"label": self.id2label[pred_idx], "score": probs[pred_idx]}]
+        else:
+            return dict(zip(id2label.values(), probs))
 
 def plot_confusion_matrix(y_preds, y_true, labels, normalized="true"):
     cm = confusion_matrix(y_true, y_preds, normalize=normalized)
@@ -127,6 +130,7 @@ if __name__ == '__main__':
     train_info = config.get('train', None)
 
     # load dataset
+    logger.info("Loading dataset.")
     dataset_path = str(Path(general.INPUT_PATH / dataset_info.get('file_name')))
     dataset_dict = load_dataset(
         dataset_info.get('file_type'),
@@ -137,6 +141,7 @@ if __name__ == '__main__':
     dataset = dataset_dict['train']
 
     # apply train-test split
+    logger.info(f"Applying train-test split with test size of {dataset_info.get('test_size')}")
     dataset = dataset.train_test_split(test_size=dataset_info.get('test_size'))
 
     # cast label column into a ClassLabel type
@@ -148,9 +153,11 @@ if __name__ == '__main__':
 
     # load the pretrained model tokenizer
     checkpoint = train_info.get('pretrained_checkpoint')
+    logger.info(f"Loading pretrained Tokenizer for {checkpoint}")
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
     # encode the text data with the tokenizer
+    logger.info(f"Encoding text data with the tokenizer")
     encoded_text = dataset.map(
         lambda x: tokenizer(
             x[dataset_info.get('target_column')],
@@ -165,15 +172,20 @@ if __name__ == '__main__':
     encoded_text.set_format(type='torch', columns=encoded_columns)
 
     # load autoconfig and auto model objects
+    logger.info(f"Loading pretrained model and config for {checkpoint}")
     config = AutoConfig.from_pretrained(checkpoint, num_labels=len(class_names))
     model = AutoModelForSequenceClassification.from_pretrained(checkpoint, config=config).to(general.DEVICE)
 
     # setting training args
+    logger.info(f"Setting training args with train info: {train_info}")
     batch_size = int(train_info.get('batch_size'))
     logging_steps = len(encoded_text['train']) // batch_size
 
     output_model_dir = utils.create_directory(general.OUTPUT_PATH, name=f"{checkpoint}-finetuned")
     output_model_checkpoints_dir = utils.create_directory(general.OUTPUT_PATH, name=f"{checkpoint}-finetuned-checkpoints")
+
+    logger.info(f"Saving best model to {output_model_dir}")
+    logger.info(f"Saving model checkpoints to {output_model_checkpoints_dir}")
 
     training_args = TrainingArguments(
         output_dir=output_model_checkpoints_dir,
@@ -195,6 +207,7 @@ if __name__ == '__main__':
     compute_metrics = train_info.get('compute_metrics')
     train_metrics = Metrics(compute_metrics)
 
+    logger.info(f"Creating Trainer object.")
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -204,13 +217,18 @@ if __name__ == '__main__':
         tokenizer=tokenizer
     )
 
+    logger.info(f"Training model for {int(train_info.get('num_train_epochs'))} epochs...")
     trainer.train()
+
+    logger.info(f"Training finished. Saving best model.")
     trainer.save_model(output_model_dir)
 
+    logger.info(f"Creating info directory.")
     output_info_dir = utils.create_directory(general.OUTPUT_PATH, name="info")
     model_info_dir = utils.create_directory(output_info_dir, name=f"{checkpoint}-finetuned")
 
     # run predictions on test data
+    logger.info(f"Generating predictions on the test dataset...")
     preds_output = trainer.predict(encoded_text["test"])
     test_predictions = np.argmax(preds_output.predictions, axis=1)
 
@@ -218,20 +236,30 @@ if __name__ == '__main__':
         dataset.set_format('pandas')
         df = dataset['test'][:]
         df['predicted_label'] = test_predictions
-        df.to_csv(model_info_dir / f"test_data_with_predictions.csv", index=False)
-        # dataset.set_format('torch')
+
+        save_path = model_info_dir / f"test_data_with_predictions.csv"
+        df.to_csv(save_path, index=False)
+
+        logger.info(f"Saved test set predictions to csv at {save_path}.")
 
         labels = encoded_text['train'].features['label'].names
         y_preds = np.argmax(preds_output.predictions, axis=1)
         y_valid = np.array(encoded_text['test']['label'])
 
         cm_normalised = plot_confusion_matrix(y_preds, y_valid, labels)
-        cm_normalised.savefig(model_info_dir / 'confusion_matrix_normalised.png')
+        cm_norm_path = model_info_dir / 'confusion_matrix_normalised.png'
+        cm_normalised.savefig(cm_norm_path)
+
+        logger.info(f"Saved normalized confusion matrix set predictions at {cm_norm_path}.")
 
         cm_counts = plot_confusion_matrix(y_preds, y_valid, labels, normalized=None)
-        cm_counts.savefig(model_info_dir / 'confusion_matrix_counts.png')
+        cm_counts_path = model_info_dir / 'confusion_matrix_counts.png'
+        cm_counts.savefig(cm_counts_path)
+
+        logger.info(f"Saved non-normalized (counts) confusion matrix set predictions at {cm_counts_path}.")
 
     if train_info.get('quantize'):
+        logger.info(f"Converting to ONNX and Quantizing model...")
         os.environ["OMP_NUM_THREADS"] = f"{cpu_count()}"
         os.environ["OMP_WAIT_POLICY"] = "ACTIVE"
 
@@ -248,12 +276,15 @@ if __name__ == '__main__':
             pipeline_name=dataset_info.get('type')
         )
 
+        logger.info(f"Saved ONNX model at {onnx_model_name}")
+
         # load newly saved onnx model
         onnx_model = create_model_for_provider(onnx_model_name)
 
         # now quantize the onnx model
-        # classes = dataset['test'].features['label']
+        # classes = dataset['test'].features['label'].names
         # pipe = OnnxPipeline(onnx_model, tokenizer, classes)
+        # pipe("bank of england raises interest rates")
 
         quantized_onnx_model_dir = utils.create_directory(general.OUTPUT_PATH, name="quantized-onnx")
         quantized_onnx_model_name = quantized_onnx_model_dir / "model.quant.onnx"
@@ -261,51 +292,74 @@ if __name__ == '__main__':
         # save quantized model
         quantize_dynamic(onnx_model_name, quantized_onnx_model_name, weight_type=QuantType.QInt8)
 
+        logger.info(f"Saved Quantized ONNX model at {quantized_onnx_model_name}")
+
         # make a copy of the tokenizer
         tokenizer.save_pretrained(quantized_onnx_model_dir)
 
+        logger.info(f"Saved tokenizer with Quantized ONNX model.")
+
         # load the quantized model
+        logger.info(f"Loading Quantized ONNX model pipeline...")
         onnx_quantized_model = create_model_for_provider(quantized_onnx_model_name)
 
         id2label = {i: label for i, label in enumerate(dataset_info.get('label_classes'))}
-        pipe = OnnxPipeline(onnx_quantized_model, tokenizer, id2label)
+        return_all = dataset_info.get('return_all_labels', True)
+
+        pipe = OnnxPipeline(
+            model=onnx_quantized_model,
+            tokenizer=tokenizer,
+            id2label=id2label,
+            return_all=return_all
+        )
 
         if train_info.get('save_info'):
             dataset.set_format('pandas')
             text = dataset['test'][dataset_info.get('target_column')][:].tolist()
 
+            logger.info(f"Generating test set predictions with Quantized ONNX model...")
             predictions = []
-            for title in tqdm(text):
-                try:
-                    pred = pipe(title)
-                    label = pred[0].get('label')
-                    score = pred[0].get('score')
-                    if label == 'relevant':
-                        predictions.append(score)
-                    else:
-                        predictions.append(1 - score)
-                except:
-                    predictions.append(-1)
+            for item in tqdm(text):
+                predictions.append(pipe(item))
 
-            predicted_labels = [(1 if p >= 0.5 else 0) for p in predictions]
+            predictions_df = pd.DataFrame.from_dict(predictions)
+            predicted_label_names = predictions_df.idxmax(axis=1).tolist()
+            predicted_label_scores = predictions_df.max(axis=1).tolist()
+
+            label2id = {label: i for i, label in enumerate(dataset_info.get('label_classes'))}
+            predicted_labels = [label2id[label] for label in predicted_label_names]
 
             df = dataset['test'][:]
             df['prediction'] = predictions
             df['predicted_label'] = predicted_labels
+            df['predicted_label_name'] = predicted_label_names
+            df['predicted_label_score'] = predicted_label_scores
 
             model_info_dir = utils.create_directory(output_info_dir, name="quantized-onnx")
 
-            df.to_csv(model_info_dir / f"test_data_with_predictions.csv", index=False)
+            save_path = model_info_dir / f"test_data_with_predictions.csv"
+            df.to_csv(save_path, index=False)
+
+            logger.info(f"Saved test set predictions data at {save_path}.")
+
             y_valid = df['label'].tolist()
 
             cm_normalised = plot_confusion_matrix(predicted_labels, y_valid, class_names)
-            cm_normalised.savefig(model_info_dir / 'confusion_matrix_normalised.png')
+            cm_norm_path = model_info_dir / 'confusion_matrix_normalised.png'
+            cm_normalised.savefig(cm_norm_path)
 
+            logger.info(f"Saved normalized confusion matrix set predictions at {cm_norm_path}.")
+
+            cm_counts_path = model_info_dir / 'confusion_matrix_counts.png'
             cm_counts = plot_confusion_matrix(predicted_labels, y_valid, class_names, normalized=None)
-            cm_counts.savefig(model_info_dir / 'confusion_matrix_counts.png')
+            cm_counts.savefig(cm_counts_path)
+
+            logger.info(f"Saved non-normalized (counts) confusion matrix set predictions at {cm_counts_path}.")
 
     if train_info.get('delete_checkpoints_after_training'):
+        logger.info(f"Deleting checkpoints created during training...")
         shutil.rmtree(output_model_checkpoints_dir)
 
     if train_info.get('delete_unquantized_onnx_after_training'):
+        logger.info(f"Deleting ONNX model created before Quantizing...")
         shutil.rmtree(onnx_model_path)
