@@ -228,9 +228,10 @@ if __name__ == '__main__':
 
         logger.info(f"Saved test set predictions to csv at {save_path}.")
 
-        labels = encoded_text['train'].features['label'].names
+        labels = encoded_text['train'].features[dataset_info.get('label_column')].names
         y_preds = np.argmax(preds_output.predictions, axis=1)
-        y_valid = np.array(encoded_text['test']['label'])
+        y_valid = np.array(encoded_text['test'][dataset_info.get('label_column')])
+        # y_valid = np.array(encoded_text['test']['label'])
 
         cm_normalised = plot_confusion_matrix(y_preds, y_valid, labels)
         cm_norm_path = model_info_dir / 'confusion_matrix_normalised.png'
@@ -328,7 +329,7 @@ if __name__ == '__main__':
 
             logger.info(f"Saved test set predictions data at {save_path}.")
 
-            y_valid = df['label'].tolist()
+            y_valid = df[dataset_info.get('label_column')].tolist()
 
             cm_normalised = plot_confusion_matrix(predicted_labels, y_valid, class_names)
             cm_norm_path = model_info_dir / 'confusion_matrix_normalised.png'
