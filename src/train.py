@@ -2,15 +2,13 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from functools import partial
 import shutil
 
-import settings.general
 import src.utils as utils
 from src.settings import general
 
-from datasets import load_metric, load_dataset
-from datasets import ClassLabel, Value
+from datasets import load_dataset
+from datasets import ClassLabel
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
 from transformers import Trainer, TrainingArguments
@@ -25,6 +23,7 @@ from onnxruntime import (GraphOptimizationLevel, InferenceSession, SessionOption
 from onnxruntime.quantization import quantize_dynamic, QuantType
 import os
 from psutil import cpu_count
+
 
 class Metrics:
     def __init__(self, metrics):
@@ -76,6 +75,7 @@ class OnnxPipeline:
         else:
             return dict(zip(id2label.values(), probs))
 
+
 def plot_confusion_matrix(y_preds, y_true, labels, normalized="true"):
     cm = confusion_matrix(y_true, y_preds, normalize=normalized)
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -99,21 +99,7 @@ def create_model_for_provider(model_path, provider="CPUExecutionProvider"):
     return session
 
 
-
-
-
-
-
-
-
-
-
 if __name__ == '__main__':
-
-    # create output directory
-    # timestamp = utils.get_timestamp(include_seconds=True)
-    # output_directory = utils.create_directory(general.OUTPUT_PATH, name=None)
-
     # create logger
     logger = utils.create_logger(
         name='text_classifier',
