@@ -1,13 +1,14 @@
 dataset:
-  file_name: 'training_data.csv'
+  file_name: 'economic_training_data.csv'
   file_type: 'csv'
   target_column: 'text'
   label_column: 'label'
   type: 'text-classification'
-  test_size: 0.1
+  test_size: 0.10
   label_classes:
-    - 'not_relevant'
-    - 'relevant'
+    - 'not_economic'
+    - 'economic'
+  return_all_labels: true
 
 train:
   pretrained_checkpoint: 'distilbert-base-uncased'
@@ -25,8 +26,8 @@ train:
   save_total_limit: 3
   push_to_hub: false
   log_level: 'error'
-  num_train_epochs: 8
-  learning_rate: 2e-5
+  num_train_epochs: 3
+  learning_rate: 1e-5
   weight_decay: 0.01
   delete_checkpoints_after_training: true
   delete_unquantized_onnx_after_training: true
