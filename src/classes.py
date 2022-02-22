@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score
 from scipy.special import softmax
@@ -36,25 +37,6 @@ class Metrics:
         return metrics_data
 
 
-import math
-def multilabel_preds(preds):
-    """
-    Transforms predictions output with sigmoid in to multilabel predictions
-
-    :param predictions:     trainer predictions
-    :return:                list of predictions for each label
-    """
-
-    result = []
-    for pred in preds:
-        prediction = []
-        for x in list(pred):
-            res = 1 / (1 + math.exp(-x))
-            prediction.append(res)
-        result.append(prediction)
-
-    return result
-
 class OnnxPipeline:
     def __init__(self, model, tokenizer, id2label, problem_type=None, return_all=True):
         self.model = model
@@ -76,8 +58,27 @@ class OnnxPipeline:
             else:
                 return dict(zip(self.id2label.values(), probs))
         else:
-            predicted_labels = multilabel_preds([logits.tolist()])[0]
+            predicted_labels = self.__multilabel_preds([logits.tolist()])[0]
             return dict(zip(self.id2label.values(), predicted_labels))
+
+
+    def __multilabel_preds(self, preds):
+        """
+        Transforms predictions output with sigmoid in to multilabel predictions
+
+        :param predictions:     trainer predictions
+        :return:                list of predictions for each label
+        """
+
+        result = []
+        for pred in preds:
+            prediction = []
+            for x in list(pred):
+                res = 1 / (1 + math.exp(-x))
+                prediction.append(res)
+            result.append(prediction)
+
+        return result
 
 
 class MultiLabelDataset(torch.utils.data.Dataset):
