@@ -10,10 +10,10 @@ classification.
 
 ### To use:
 
-Place your training dataset into the input folder along with a spec YAML file containing information about the name of 
+1. Place your training dataset into the input folder along with a spec YAML file containing information about the name of 
 the text field, name of the label fields, any training parameter information, etc.  
-
-The trained models will be saved in the output directory.  
+2. Run `train.py` in the src directory.
+3. The trained models will be saved in the output directory.  
 
 ### Installing:
 
