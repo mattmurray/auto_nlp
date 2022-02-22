@@ -6,8 +6,8 @@ classification.
 ### Features:
 - Saves the best Pytorch model at the end of training.
 - Converts Pytorch model to ONNX for production.
-- Quantizes ONNX models for reduced file size.
-- Outputs confusion matrices and test set predictions at the end of training.
+- Quantizes ONNX model for reduced file size.
+- Outputs confusion matrices and test set predictions to evaluate performance.
 
 ### To use:
 
