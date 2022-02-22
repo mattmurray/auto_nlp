@@ -1,5 +1,4 @@
 from transformers import DataCollatorWithPadding
-import math
 
 from tqdm import tqdm
 import numpy as np
@@ -68,10 +67,18 @@ if __name__ == '__main__':
     # load the pretrained model tokenizer
     checkpoint = train_info.get('pretrained_checkpoint')
     logger.info(f"Loading pretrained Tokenizer for {checkpoint}")
-    tokenizer = AutoTokenizer.from_pretrained(
+
+    auto_config = AutoConfig.from_pretrained(
         checkpoint,
         problem_type=problem_type,
         num_labels=len(class_names)
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        checkpoint,
+        config=auto_config
+        # problem_type=problem_type,
+        # num_labels=len(class_names)
     )
 
     # encode the text data with the tokenizer
@@ -101,7 +108,6 @@ if __name__ == '__main__':
                 x[dataset_info.get('target_column')],
                 padding=train_info.get('padding'),
                 truncation=train_info.get('truncation'),
-                return_tensors='pt'
             ),
             batched=True
         )
@@ -121,15 +127,15 @@ if __name__ == '__main__':
     # config = AutoConfig.from_pretrained(checkpoint, problem_type=problem_type, num_labels=len(class_names))
     model = AutoModelForSequenceClassification.from_pretrained(
         checkpoint,
-        # config=config,
-        problem_type=problem_type,
-        num_labels=len(class_names)
+        config=auto_config,
+        # problem_type=problem_type,
+        # num_labels=len(class_names)
     ).to(general.DEVICE)
 
     # setting training args
     logger.info(f"Setting training args with train info: {train_info}")
     batch_size = int(train_info.get('batch_size'))
-    logging_steps = len(dataset['train']) // batch_size
+    logging_steps = len(train_dataset) // batch_size
 
     output_model_dir = utils.create_directory(general.OUTPUT_PATH, name=f"{checkpoint}-finetuned")
     output_model_checkpoints_dir = utils.create_directory(general.OUTPUT_PATH, name=f"{checkpoint}-finetuned-checkpoints")
@@ -140,10 +146,8 @@ if __name__ == '__main__':
     training_args = TrainingArguments(
         output_dir=output_model_checkpoints_dir,
         num_train_epochs=int(train_info.get('num_train_epochs')),
-        learning_rate=float(train_info.get('learning_rate')),
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        weight_decay=float(train_info.get('weight_decay')),
         evaluation_strategy=train_info.get('evaluation_strategy'),
         save_strategy=train_info.get('save_strategy'),
         save_total_limit=int(train_info.get('save_total_limit')),
@@ -153,6 +157,14 @@ if __name__ == '__main__':
         log_level=train_info.get('log_level'),
         load_best_model_at_end=True
     )
+
+    learning_rate = train_info.get('learning_rate', None)
+    if learning_rate is not None:
+        training_args.learning_rate = float(learning_rate)
+
+    weight_decay = train_info.get('weight_decay', None)
+    if weight_decay is not None:
+        training_args.weight_decay = float(weight_decay)
 
     logger.info(f"Creating Trainer object.")
 
@@ -170,12 +182,15 @@ if __name__ == '__main__':
     trainer = Trainer(
         model=model,
         args=training_args,
-        data_collator=data_collator,
-        compute_metrics=train_metrics,
+        # compute_metrics=train_metrics,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        data_collator=data_collator
     )
+
+    if train_metrics is not None:
+        trainer.compute_metrics = train_metrics
 
     logger.info(f"Training model for {int(train_info.get('num_train_epochs'))} epochs...")
     trainer.train()
@@ -191,27 +206,8 @@ if __name__ == '__main__':
     logger.info(f"Generating predictions on the test dataset...")
     preds_output = trainer.predict(test_dataset)
 
-    def multilabel_preds(predictions):
-        """
-        Transforms predictions output with sigmoid in to multilabel predictions
-
-        :param predictions:     trainer predictions
-        :return:                list of predictions for each label
-        """
-
-        result = []
-        for pred in predictions:
-            prediction = []
-            for x in list(pred):
-                res = 1 / (1 + math.exp(-x))
-                prediction.append(res)
-            result.append(prediction)
-
-        return result
-
-
     if problem_type == 'multi_label_classification':
-        test_predictions = multilabel_preds(preds_output.predictions)
+        test_predictions = utils.multilabel_preds(preds_output.predictions)
     else:
         # this needs to change for multilabel...
         test_predictions = np.argmax(preds_output.predictions, axis=1)
@@ -240,8 +236,7 @@ if __name__ == '__main__':
             logger.info(f"Saved multilabel confusion matrices set predictions at {model_info_dir}.")
         else:
             y_preds = np.argmax(preds_output.predictions, axis=1)
-            y_valid = np.array(encoded_text['test'][dataset_info.get('label_column')])
-            # y_valid = np.array(encoded_text['test']['label'])
+            y_valid = np.array(test_dataset[dataset_info.get('label_column')])
             cm_normalised = utils.plot_confusion_matrix(y_preds, y_valid, class_names)
             cm_norm_path = model_info_dir / 'confusion_matrix_normalised.png'
             cm_normalised.savefig(cm_norm_path)
@@ -282,11 +277,7 @@ if __name__ == '__main__':
         # load newly saved onnx model
         onnx_model = utils.create_model_for_provider(onnx_model_name)
 
-        # now quantize the onnx model
-        # classes = dataset['test'].features['label'].names
-        # pipe = OnnxPipeline(onnx_model, tokenizer, classes)
-        # pipe("bank of england raises interest rates")
-
+        # set directory and file name for quantized onnx model
         quantized_onnx_model_dir = utils.create_directory(general.OUTPUT_PATH, name="quantized-onnx")
         quantized_onnx_model_name = quantized_onnx_model_dir / "model.quant.onnx"
 
@@ -315,9 +306,7 @@ if __name__ == '__main__':
             problem_type=problem_type
         )
 
-        # preds = pipe("unemployment rises and as bank of england raises interest rates to counter rampant inflation ")
-
-
+        # preds = pipe("consumer spending falls after cost of living crisis deepens")
         if train_info.get('save_info'):
             dataset.set_format('pandas')
             text = dataset['test'][dataset_info.get('target_column')][:].tolist()
@@ -334,7 +323,6 @@ if __name__ == '__main__':
                 predicted_label_names = [', '.join([label for label, score in item.items() if score >= 0.5]).strip() for item in predictions]
                 predicted_label_scores = [[score for label, score in item.items()] for item in predictions]
             else:
-
                 predicted_label_names = predictions_df.idxmax(axis=1).tolist()
                 predicted_label_scores = predictions_df.max(axis=1).tolist()
 
@@ -380,7 +368,6 @@ if __name__ == '__main__':
                 cm_counts.savefig(cm_counts_path)
 
                 logger.info(f"Saved non-normalized (counts) confusion matrix set predictions at {cm_counts_path}.")
-
 
     if train_info.get('delete_checkpoints_after_training'):
         logger.info(f"Deleting checkpoints created during training...")
