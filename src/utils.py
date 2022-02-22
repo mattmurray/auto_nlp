@@ -4,6 +4,10 @@ from datetime import datetime
 import requests
 import yaml
 from tqdm import tqdm
+from onnxruntime import (GraphOptimizationLevel, InferenceSession, SessionOptions)
+import matplotlib.pyplot as plt
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, multilabel_confusion_matrix
+
 
 def get_timestamp(include_seconds=True):
     """
@@ -115,4 +119,39 @@ def create_logger(name, file_path, level='debug', file_level='debug', console_le
     logger.addHandler(ch)
 
     return logger
+
+
+def plot_confusion_matrix(y_preds, y_true, labels, normalized="true"):
+    cm = confusion_matrix(y_true, y_preds, normalize=normalized)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+    if normalized == 'true':
+        disp.plot(cmap="Blues", values_format=".2f", ax=ax, colorbar=False)
+    else:
+        disp.plot(cmap="Blues", values_format=".0f", ax=ax, colorbar=False)
+
+    plt.title("Test data confusion matrix")
+    return plt
+
+
+def plot_multilabel_confusion_matrix(y_true, y_pred, class_names):
+    plots = []
+    ml_cm = multilabel_confusion_matrix(y_true=y_true, y_pred=y_pred)
+    for item in list(zip(ml_cm, class_names)):
+        fig, ax = plt.subplots(figsize=(8, 8))
+        disp = ConfusionMatrixDisplay(confusion_matrix=item[0])
+        disp.plot(cmap="Blues", values_format=".0f", ax=ax, colorbar=False)
+        plt.title(f"Test data confusion matrix - {item[1]}")
+        plots.append((item[1], fig))
+    return plots
+
+
+def create_model_for_provider(model_path, provider="CPUExecutionProvider"):
+    # creates InterenceSession to feed inputs to the model
+    options = SessionOptions()
+    options.intra_op_num_threads = 1
+    options.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
+    session = InferenceSession(str(model_path), options, providers=[provider])
+    session.disable_fallback()
+    return session
 
