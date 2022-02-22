@@ -4,9 +4,10 @@ The codebase currently supports training models for single/multiclass text class
 classification.
 
 ### Features:
-- Converts Pytorch models to ONNX for production
-- Quantizes ONNX models for reduced file size
-- Outputs confusion matrices and test set predictions at the end of training
+- Saves the best Pytorch model at the end of training.
+- Converts Pytorch model to ONNX for production.
+- Quantizes ONNX models for reduced file size.
+- Outputs confusion matrices and test set predictions at the end of training.
 
 ### To use:
 
