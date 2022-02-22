@@ -18,7 +18,7 @@ the text field, name of the label fields, any training parameter information, et
 
 ### Installing:
 
-First install the dependencies:   
+Install dependencies:   
 `pip install -r requirements.txt`
 
 Install Pytorch:  
