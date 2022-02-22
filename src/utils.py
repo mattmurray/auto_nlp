@@ -7,7 +7,7 @@ from tqdm import tqdm
 from onnxruntime import (GraphOptimizationLevel, InferenceSession, SessionOptions)
 import matplotlib.pyplot as plt
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, multilabel_confusion_matrix
-
+import math
 
 def get_timestamp(include_seconds=True):
     """
@@ -154,4 +154,23 @@ def create_model_for_provider(model_path, provider="CPUExecutionProvider"):
     session = InferenceSession(str(model_path), options, providers=[provider])
     session.disable_fallback()
     return session
+
+
+def multilabel_preds(preds):
+    """
+    Transforms predictions output with sigmoid in to multilabel predictions
+
+    :param predictions:     trainer predictions
+    :return:                list of predictions for each label
+    """
+
+    result = []
+    for pred in preds:
+        prediction = []
+        for x in list(pred):
+            res = 1 / (1 + math.exp(-x))
+            prediction.append(res)
+        result.append(prediction)
+
+    return result
 
