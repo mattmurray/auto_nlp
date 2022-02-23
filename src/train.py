@@ -1,25 +1,26 @@
-from transformers import DataCollatorWithPadding
+# main python imports
+import os
+import shutil
+from pathlib import Path
 
-from tqdm import tqdm
+# local imports
+import src.classes as classes
+from src.settings import general
+import src.utils as utils
+
+# huggingface imports
+from datasets import load_dataset, ClassLabel
+from transformers.convert_graph_to_onnx import convert
+from transformers import (
+    AutoTokenizer, AutoModelForSequenceClassification, AutoConfig, DataCollatorWithPadding, Trainer, TrainingArguments
+)
+
+# other package imports
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import shutil
-
-import src.utils as utils
-from src.settings import general
-import src.classes as classes
-
-from datasets import load_dataset
-from datasets import ClassLabel, Features, Value
-
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
-from transformers import Trainer, TrainingArguments
-from transformers.convert_graph_to_onnx import convert
-
-from onnxruntime.quantization import quantize_dynamic, QuantType
-import os
+from tqdm import tqdm
 from psutil import cpu_count
+from onnxruntime.quantization import quantize_dynamic, QuantType
 
 
 if __name__ == '__main__':
@@ -77,8 +78,6 @@ if __name__ == '__main__':
     tokenizer = AutoTokenizer.from_pretrained(
         checkpoint,
         config=auto_config
-        # problem_type=problem_type,
-        # num_labels=len(class_names)
     )
 
     # encode the text data with the tokenizer
