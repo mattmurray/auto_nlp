@@ -45,3 +45,4 @@ urllib3==1.26.8
 xxhash==2.0.2
 yarl==1.7.2
 psutil
+matplotlib
