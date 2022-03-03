@@ -1,6 +1,6 @@
 # Auto NLP (with Huggingface Transformers)
 
-The codebase currently supports training models for single/multiclass text classification and multilabel text 
+Work in progress. Currently supports training models for single/multiclass text classification and multilabel text 
 classification.
 
 ### Features:
